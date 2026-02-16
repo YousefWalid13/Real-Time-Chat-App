@@ -1,9 +1,13 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.AspNetCore.Identity;
+using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.IdentityModel.Tokens;
+using System.Text;
 using Real_Time_Chat_App.Data;
 using Real_Time_Chat_App.Hubs;
 using Real_Time_Chat_App.Services;
 using ChatApp.Domain.Entities;
+using Real_Time_Chat_App.Services.Security;
 
 namespace Real_Time_Chat_App
 {
@@ -13,16 +17,13 @@ namespace Real_Time_Chat_App
         {
             var builder = WebApplication.CreateBuilder(args);
 
-            // Add services to the container.
             builder.Services.AddControllers();
             builder.Services.AddEndpointsApiExplorer();
             builder.Services.AddSwaggerGen();
 
-            // Add DbContext with PostgreSQL
             builder.Services.AddDbContext<ChatDbContext>(options =>
                 options.UseNpgsql(builder.Configuration.GetConnectionString("DefaultConnection")));
 
-            // Add Identity
             builder.Services.AddIdentity<ApplicationUser, IdentityRole>(options =>
             {
                 options.Password.RequireDigit = true;
@@ -35,28 +36,65 @@ namespace Real_Time_Chat_App
             .AddEntityFrameworkStores<ChatDbContext>()
             .AddDefaultTokenProviders();
 
-            // add dI
-            builder.Services.AddSingleton<IMessageService, MessageService>();
-            // Add SignalR
+            builder.Services.Configure<JwtSettings>(builder.Configuration.GetSection("Jwt"));
+
+            var jwtSettings = builder.Configuration.GetSection("Jwt").Get<JwtSettings>();
+            if (jwtSettings != null && !string.IsNullOrEmpty(jwtSettings.Key))
+            {
+                builder.Services.AddAuthentication(options =>
+                {
+                    options.DefaultAuthenticateScheme = JwtBearerDefaults.AuthenticationScheme;
+                    options.DefaultChallengeScheme = JwtBearerDefaults.AuthenticationScheme;
+                })
+                .AddJwtBearer(options =>
+                {
+                    options.TokenValidationParameters = new TokenValidationParameters
+                    {
+                        ValidateIssuer = true,
+                        ValidateAudience = true,
+                        ValidateLifetime = true,
+                        ValidateIssuerSigningKey = true,
+                        ValidIssuer = jwtSettings.Issuer,
+                        ValidAudience = jwtSettings.Audience,
+                        IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwtSettings.Key)),
+                        ClockSkew = TimeSpan.Zero
+                    };
+
+                    options.Events = new JwtBearerEvents
+                    {
+                        OnMessageReceived = context =>
+                        {
+                            var accessToken = context.Request.Query["access_token"];
+                            var path = context.HttpContext.Request.Path;
+
+                            if (!string.IsNullOrEmpty(accessToken) && path.StartsWithSegments("/chatHub"))
+                            {
+                                context.Token = accessToken;
+                            }
+                            return Task.CompletedTask;
+                        }
+                    };
+                });
+            }
+
+            builder.Services.AddScoped<IMessageService, MessageService>();
+            builder.Services.AddScoped<IJwtTokenService, JwtTokenService>();
+
             builder.Services.AddSignalR();
 
-            // Add Application Services
-            builder.Services.AddScoped<IMessageService, MessageService>();
-
-            // Add CORS
             builder.Services.AddCors(options =>
             {
                 options.AddPolicy("AllowAll", policy =>
                 {
-                    policy.AllowAnyOrigin()
+                    policy.WithOrigins("http://localhost:3000", "http://localhost:5173")
                           .AllowAnyMethod()
-                          .AllowAnyHeader();
+                          .AllowAnyHeader()
+                          .AllowCredentials();
                 });
             });
 
             var app = builder.Build();
 
-            // Configure the HTTP request pipeline.
             if (app.Environment.IsDevelopment())
             {
                 app.UseSwagger();
