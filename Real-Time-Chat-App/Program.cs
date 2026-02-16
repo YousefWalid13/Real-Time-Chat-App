@@ -1,8 +1,9 @@
-
-using ChatApp.Domain.Entities;
-using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.AspNetCore.Identity;
 using Real_Time_Chat_App.Data;
+using Real_Time_Chat_App.Hubs;
+using Real_Time_Chat_App.Services;
+using ChatApp.Domain.Entities;
 
 namespace Real_Time_Chat_App
 {
@@ -17,9 +18,9 @@ namespace Real_Time_Chat_App
             builder.Services.AddEndpointsApiExplorer();
             builder.Services.AddSwaggerGen();
 
-            // Add DbContext with PostgreSQL (reads from user secrets in development)
+            // Add DbContext with PostgreSQL
             builder.Services.AddDbContext<ChatDbContext>(options =>
-     options.UseNpgsql(builder.Configuration.GetConnectionString("DefaultConnection")));
+                options.UseNpgsql(builder.Configuration.GetConnectionString("DefaultConnection")));
 
             // Add Identity
             builder.Services.AddIdentity<ApplicationUser, IdentityRole>(options =>
@@ -29,9 +30,29 @@ namespace Real_Time_Chat_App
                 options.Password.RequireUppercase = true;
                 options.Password.RequireNonAlphanumeric = false;
                 options.Password.RequiredLength = 6;
+                options.User.RequireUniqueEmail = true;
             })
             .AddEntityFrameworkStores<ChatDbContext>()
             .AddDefaultTokenProviders();
+
+            // add dI
+            builder.Services.AddSingleton<IMessageService, MessageService>();
+            // Add SignalR
+            builder.Services.AddSignalR();
+
+            // Add Application Services
+            builder.Services.AddScoped<IMessageService, MessageService>();
+
+            // Add CORS
+            builder.Services.AddCors(options =>
+            {
+                options.AddPolicy("AllowAll", policy =>
+                {
+                    policy.AllowAnyOrigin()
+                          .AllowAnyMethod()
+                          .AllowAnyHeader();
+                });
+            });
 
             var app = builder.Build();
 
@@ -43,9 +64,12 @@ namespace Real_Time_Chat_App
             }
 
             app.UseHttpsRedirection();
+            app.UseCors("AllowAll");
             app.UseAuthentication();
             app.UseAuthorization();
+
             app.MapControllers();
+            app.MapHub<ChatHub>("/chatHub");
 
             app.Run();
         }

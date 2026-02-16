@@ -5,7 +5,7 @@ namespace Real_Time_Chat_App.Controllers
 {
     [Route("api/[controller]")]
     [ApiController]
-    public class ValuesController : ControllerBase
+    public class AuthController : ControllerBase
     {
     }
 }
