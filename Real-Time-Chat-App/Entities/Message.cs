@@ -20,7 +20,7 @@ public class Message
         if (content.Length > 2000)
             throw new ArgumentException("Message is too long.");
 
-        
+
         RoomId = roomId;
         SenderId = senderId;
         Content = content;

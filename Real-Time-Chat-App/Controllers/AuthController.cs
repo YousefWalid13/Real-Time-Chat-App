@@ -1,11 +1,10 @@
 ﻿using ChatApp.Domain.Entities;
 using Microsoft.AspNetCore.Authorization;
-using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Identity;
+using Microsoft.AspNetCore.Mvc;
+using Real_Time_Chat_App.DTOs.Auth;
 using Real_Time_Chat_App.Services.Security;
 using System.Security.Claims;
-using Microsoft.AspNetCore.Identity.Data;
-using Real_Time_Chat_App.DTOs.Auth;
 
 namespace Real_Time_Chat_App.Controllers
 {
@@ -114,7 +113,7 @@ namespace Real_Time_Chat_App.Controllers
                 email = user.Email,
                 fullName = user.FullName,
                 token,
-                
+
                 success = true,
                 message = "Login successful"
             });
@@ -221,5 +220,5 @@ namespace Real_Time_Chat_App.Controllers
             return BadRequest(new { message = "Failed to assign role", errors = result.Errors });
         }
     }
-    
+
 }

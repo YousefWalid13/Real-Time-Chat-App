@@ -15,7 +15,7 @@ public class ChatDbContextFactory
             .SetBasePath(Directory.GetCurrentDirectory())
             .AddJsonFile("appsettings.json", optional: true)
             .AddJsonFile($"appsettings.{environment}.json", optional: true)
-            .AddUserSecrets<ChatDbContextFactory>()  
+            .AddUserSecrets<ChatDbContextFactory>()
             .AddEnvironmentVariables()
             .Build();
 

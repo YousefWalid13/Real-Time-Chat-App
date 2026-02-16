@@ -1,13 +1,9 @@
 ﻿using ChatApp.Domain.Entities;
 using Microsoft.AspNetCore.Authorization;
-using Microsoft.AspNetCore.Http.HttpResults;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
-using Microsoft.Extensions.Hosting;
 using Real_Time_Chat_App.Data;
 using Real_Time_Chat_App.DTOs.Rooms;
-using StackExchange.Redis;
-using System.ComponentModel.DataAnnotations;
 using System.Security.Claims;
 
 namespace Real_Time_Chat_App.Controllers
@@ -301,5 +297,5 @@ namespace Real_Time_Chat_App.Controllers
         }
     }
 
-    
+
 }

@@ -1,11 +1,9 @@
-﻿using ChatApp.Domain.Entities;
-using Microsoft.AspNetCore.Authorization;
+﻿using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Real_Time_Chat_App.Data;
 using Real_Time_Chat_App.DTOs.Message;
 using Real_Time_Chat_App.Services;
-using System.ComponentModel.DataAnnotations;
 using System.Security.Claims;
 
 namespace Real_Time_Chat_App.Controllers
@@ -123,7 +121,7 @@ namespace Real_Time_Chat_App.Controllers
                     message.IsDeleted
                 }
             });
-        }   
+        }
         [HttpPut("{messageId}")]
         public async Task<IActionResult> EditMessage(int messageId, [FromBody] EditMessageRequest request)
         {
@@ -161,7 +159,7 @@ namespace Real_Time_Chat_App.Controllers
         }
     }
 
-   
 
-   
+
+
 }

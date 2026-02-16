@@ -1,8 +1,8 @@
 ﻿using ChatApp.Domain.Entities;
 using Microsoft.AspNetCore.SignalR;
+using Microsoft.EntityFrameworkCore;
 using Real_Time_Chat_App.Data;
 using Real_Time_Chat_App.Services;
-using Microsoft.EntityFrameworkCore;
 using System.Collections.Concurrent;
 
 namespace Real_Time_Chat_App.Hubs
