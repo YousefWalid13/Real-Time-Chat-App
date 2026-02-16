@@ -12,8 +12,8 @@ using Real_Time_Chat_App.Data;
 namespace Real_Time_Chat_App.Migrations
 {
     [DbContext(typeof(ChatDbContext))]
-    [Migration("20260216195509_UpdateDb")]
-    partial class UpdateDb
+    [Migration("20260216204125_fixGUIDtoINT")]
+    partial class fixGUIDtoINT
     {
         /// <inheritdoc />
         protected override void BuildTargetModel(ModelBuilder modelBuilder)
@@ -98,9 +98,11 @@ namespace Real_Time_Chat_App.Migrations
 
             modelBuilder.Entity("ChatApp.Domain.Entities.Message", b =>
                 {
-                    b.Property<Guid>("Id")
+                    b.Property<int>("Id")
                         .ValueGeneratedOnAdd()
-                        .HasColumnType("uuid");
+                        .HasColumnType("integer");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
 
                     b.Property<string>("Content")
                         .IsRequired()
@@ -116,8 +118,8 @@ namespace Real_Time_Chat_App.Migrations
                     b.Property<bool>("IsEdited")
                         .HasColumnType("boolean");
 
-                    b.Property<Guid>("RoomId")
-                        .HasColumnType("uuid");
+                    b.Property<int>("RoomId")
+                        .HasColumnType("integer");
 
                     b.Property<string>("SenderId")
                         .IsRequired()
@@ -134,9 +136,11 @@ namespace Real_Time_Chat_App.Migrations
 
             modelBuilder.Entity("ChatApp.Domain.Entities.Room", b =>
                 {
-                    b.Property<Guid>("Id")
+                    b.Property<int>("Id")
                         .ValueGeneratedOnAdd()
-                        .HasColumnType("uuid");
+                        .HasColumnType("integer");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
 
                     b.Property<DateTime>("CreatedAtUtc")
                         .HasColumnType("timestamp with time zone");
@@ -176,8 +180,8 @@ namespace Real_Time_Chat_App.Migrations
 
             modelBuilder.Entity("ChatApp.Domain.Entities.UserRoom", b =>
                 {
-                    b.Property<Guid>("RoomId")
-                        .HasColumnType("uuid");
+                    b.Property<int>("RoomId")
+                        .HasColumnType("integer");
 
                     b.Property<string>("UserId")
                         .HasColumnType("text");

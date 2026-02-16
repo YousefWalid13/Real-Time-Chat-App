@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.SignalR;
 using Real_Time_Chat_App.Data;
 using Real_Time_Chat_App.Services;
 using Microsoft.EntityFrameworkCore;
+using System.Collections.Concurrent;
 
 namespace Real_Time_Chat_App.Hubs
 {
@@ -10,6 +11,7 @@ namespace Real_Time_Chat_App.Hubs
     {
         private readonly ChatDbContext _context;
         private readonly IMessageService _messageService;
+        private static readonly ConcurrentDictionary<string, HashSet<string>> _onlineUsers = new();
 
         public ChatHub(ChatDbContext context, IMessageService messageService)
         {
@@ -23,7 +25,6 @@ namespace Real_Time_Chat_App.Hubs
 
             if (!string.IsNullOrEmpty(userId))
             {
-                // Store connection
                 var connection = new UserConnection
                 {
                     UserId = userId,
@@ -34,7 +35,15 @@ namespace Real_Time_Chat_App.Hubs
                 _context.UserConnections.Add(connection);
                 await _context.SaveChangesAsync();
 
-                // Get user's rooms and join them
+                _onlineUsers.AddOrUpdate(
+                    userId,
+                    new HashSet<string> { Context.ConnectionId },
+                    (key, existingSet) =>
+                    {
+                        existingSet.Add(Context.ConnectionId);
+                        return existingSet;
+                    });
+
                 var userRooms = await _context.UserRooms
                     .Where(ur => ur.UserId == userId)
                     .Select(ur => ur.RoomId.ToString())
@@ -45,8 +54,14 @@ namespace Real_Time_Chat_App.Hubs
                     await Groups.AddToGroupAsync(Context.ConnectionId, roomId);
                 }
 
-                // Notify others that user is online
-                await Clients.All.SendAsync("UserConnected", userId);
+                await Clients.All.SendAsync("UserConnected", new
+                {
+                    userId,
+                    connectionId = Context.ConnectionId,
+                    timestamp = DateTime.UtcNow
+                });
+
+                await Clients.Caller.SendAsync("OnlineUsers", GetOnlineUsersList());
             }
 
             await base.OnConnectedAsync();
@@ -62,26 +77,78 @@ namespace Real_Time_Chat_App.Hubs
                 _context.UserConnections.Remove(connection);
                 await _context.SaveChangesAsync();
 
-                // Notify others that user is offline
-                await Clients.All.SendAsync("UserDisconnected", connection.UserId);
+                var userId = connection.UserId;
+
+                if (_onlineUsers.TryGetValue(userId, out var connections))
+                {
+                    connections.Remove(Context.ConnectionId);
+
+                    if (connections.Count == 0)
+                    {
+                        _onlineUsers.TryRemove(userId, out _);
+
+                        await Clients.All.SendAsync("UserDisconnected", new
+                        {
+                            userId,
+                            timestamp = DateTime.UtcNow
+                        });
+                    }
+                }
             }
 
             await base.OnDisconnectedAsync(exception);
         }
 
-        public async Task SendMessage(Guid roomId, string content)
+        public async Task GetOnlineUsers()
+        {
+            await Clients.Caller.SendAsync("OnlineUsers", GetOnlineUsersList());
+        }
+
+        public async Task GetRoomOnlineUsers(int roomId)
         {
             var userId = Context.UserIdentifier;
 
             if (string.IsNullOrEmpty(userId))
-            {
                 throw new HubException("User not authenticated");
-            }
 
-            // Create and save message
+            var isMember = await _context.UserRooms
+                .AnyAsync(r => r.RoomId == roomId && r.UserId == userId);
+
+            if (!isMember)
+                throw new HubException("Not authorized for this room");
+
+            var roomMembers = await _context.UserRooms
+                .Where(ur => ur.RoomId == roomId)
+                .Select(ur => ur.UserId)
+                .ToListAsync();
+
+            var onlineInRoom = roomMembers
+                .Where(u => _onlineUsers.ContainsKey(u))
+                .ToList();
+
+            await Clients.Caller.SendAsync("RoomOnlineUsers", new
+            {
+                roomId,
+                onlineUsers = onlineInRoom,
+                count = onlineInRoom.Count
+            });
+        }
+
+        public async Task SendMessage(int roomId, string content)
+        {
+            var userId = Context.UserIdentifier;
+
+            if (string.IsNullOrEmpty(userId))
+                throw new HubException("User not authenticated");
+
+            var isMember = await _context.UserRooms
+                .AnyAsync(r => r.RoomId == roomId && r.UserId == userId);
+
+            if (!isMember)
+                throw new HubException("Not authorized for this room");
+
             var message = await _messageService.SendMessageAsync(roomId, userId, content);
 
-            // Send to all users in the room
             await Clients.Group(roomId.ToString()).SendAsync("ReceiveMessage", new
             {
                 message.Id,
@@ -94,46 +161,48 @@ namespace Real_Time_Chat_App.Hubs
             });
         }
 
-        public async Task JoinRoom(Guid roomId)
+        public async Task JoinRoom(int roomId)
         {
             var userId = Context.UserIdentifier;
 
             if (string.IsNullOrEmpty(userId))
-            {
                 throw new HubException("User not authenticated");
-            }
 
             var room = await _context.Rooms
                 .Include(r => r.Members)
                 .FirstOrDefaultAsync(r => r.Id == roomId);
 
             if (room == null)
-            {
                 throw new HubException("Room not found");
-            }
 
-            // Add user to room if not already a member
             if (!room.Members.Any(m => m.UserId == userId))
             {
                 room.AddMember(userId);
                 await _context.SaveChangesAsync();
             }
 
-            // Add to SignalR group
             await Groups.AddToGroupAsync(Context.ConnectionId, roomId.ToString());
 
-            // Notify room members
-            await Clients.Group(roomId.ToString()).SendAsync("UserJoinedRoom", roomId, userId);
+            await Clients.Group(roomId.ToString()).SendAsync("UserJoinedRoom", new
+            {
+                roomId,
+                userId,
+                timestamp = DateTime.UtcNow
+            });
         }
 
-        public async Task LeaveRoom(Guid roomId)
+        public async Task LeaveRoom(int roomId)
         {
             var userId = Context.UserIdentifier;
 
             if (string.IsNullOrEmpty(userId))
-            {
                 throw new HubException("User not authenticated");
-            }
+
+            var isMember = await _context.UserRooms
+                .AnyAsync(r => r.RoomId == roomId && r.UserId == userId);
+
+            if (!isMember)
+                throw new HubException("Not authorized for this room");
 
             var room = await _context.Rooms
                 .Include(r => r.Members)
@@ -145,74 +214,117 @@ namespace Real_Time_Chat_App.Hubs
                 await _context.SaveChangesAsync();
             }
 
-            // Remove from SignalR group
             await Groups.RemoveFromGroupAsync(Context.ConnectionId, roomId.ToString());
 
-            // Notify room members
-            await Clients.Group(roomId.ToString()).SendAsync("UserLeftRoom", roomId, userId);
+            await Clients.Group(roomId.ToString()).SendAsync("UserLeftRoom", new
+            {
+                roomId,
+                userId,
+                timestamp = DateTime.UtcNow
+            });
         }
 
-        public async Task EditMessage(Guid messageId, string newContent)
+        public async Task EditMessage(int messageId, string newContent)
         {
             var userId = Context.UserIdentifier;
 
             if (string.IsNullOrEmpty(userId))
-            {
                 throw new HubException("User not authenticated");
-            }
 
             var message = await _messageService.EditMessageAsync(messageId, userId, newContent);
 
-            // Notify room members
+            var isMember = await _context.UserRooms
+                .AnyAsync(r => r.RoomId == message.RoomId && r.UserId == userId);
+
+            if (!isMember)
+                throw new HubException("Not authorized for this room");
+
             await Clients.Group(message.RoomId.ToString()).SendAsync("MessageEdited", new
             {
                 message.Id,
                 message.RoomId,
                 message.Content,
-                message.IsEdited
+                message.IsEdited,
+                editedAt = DateTime.UtcNow
             });
         }
 
-        public async Task DeleteMessage(Guid messageId)
+        public async Task DeleteMessage(int messageId)
         {
             var userId = Context.UserIdentifier;
 
             if (string.IsNullOrEmpty(userId))
-            {
                 throw new HubException("User not authenticated");
-            }
 
             var message = await _messageService.DeleteMessageAsync(messageId, userId);
 
-            // Notify room members
+            var isMember = await _context.UserRooms
+                .AnyAsync(r => r.RoomId == message.RoomId && r.UserId == userId);
+
+            if (!isMember)
+                throw new HubException("Not authorized for this room");
+
             await Clients.Group(message.RoomId.ToString()).SendAsync("MessageDeleted", new
             {
                 message.Id,
                 message.RoomId,
-                message.IsDeleted
+                message.IsDeleted,
+                deletedAt = DateTime.UtcNow
             });
         }
 
-        public async Task Typing(Guid roomId)
+        public async Task Typing(int roomId)
         {
             var userId = Context.UserIdentifier;
 
-            if (!string.IsNullOrEmpty(userId))
-            {
-                await Clients.OthersInGroup(roomId.ToString())
-                    .SendAsync("UserTyping", roomId, userId);
-            }
+            if (string.IsNullOrEmpty(userId))
+                throw new HubException("User not authenticated");
+
+            var isMember = await _context.UserRooms
+                .AnyAsync(r => r.RoomId == roomId && r.UserId == userId);
+
+            if (!isMember)
+                throw new HubException("Not authorized for this room");
+
+            await Clients.OthersInGroup(roomId.ToString())
+                .SendAsync("UserTyping", new
+                {
+                    roomId,
+                    userId,
+                    timestamp = DateTime.UtcNow
+                });
         }
 
-        public async Task StopTyping(Guid roomId)
+        public async Task StopTyping(int roomId)
         {
             var userId = Context.UserIdentifier;
 
-            if (!string.IsNullOrEmpty(userId))
+            if (string.IsNullOrEmpty(userId))
+                throw new HubException("User not authenticated");
+
+            var isMember = await _context.UserRooms
+                .AnyAsync(r => r.RoomId == roomId && r.UserId == userId);
+
+            if (!isMember)
+                throw new HubException("Not authorized for this room");
+
+            await Clients.OthersInGroup(roomId.ToString())
+                .SendAsync("UserStoppedTyping", new
+                {
+                    roomId,
+                    userId,
+                    timestamp = DateTime.UtcNow
+                });
+        }
+
+        private List<object> GetOnlineUsersList()
+        {
+            return _onlineUsers.Select(kvp => new
             {
-                await Clients.OthersInGroup(roomId.ToString())
-                    .SendAsync("UserStoppedTyping", roomId, userId);
-            }
+                userId = kvp.Key,
+                connectionCount = kvp.Value.Count,
+                isOnline = true
+            }).ToList<object>();
         }
     }
 }

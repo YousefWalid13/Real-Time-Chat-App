@@ -13,7 +13,7 @@ namespace Real_Time_Chat_App.Services
             _context = context;
         }
 
-        public async Task<Message> SendMessageAsync(Guid roomId, string senderId, string content)
+        public async Task<Message> SendMessageAsync(int roomId, string senderId, string content)
         {
             // Verify room exists
             var room = await _context.Rooms.FindAsync(roomId);
@@ -40,7 +40,7 @@ namespace Real_Time_Chat_App.Services
             return message;
         }
 
-        public async Task<Message> EditMessageAsync(Guid messageId, string userId, string newContent)
+        public async Task<Message> EditMessageAsync(int messageId, string userId, string newContent)
         {
             var message = await _context.Messages.FindAsync(messageId);
 
@@ -60,7 +60,7 @@ namespace Real_Time_Chat_App.Services
             return message;
         }
 
-        public async Task<Message> DeleteMessageAsync(Guid messageId, string userId)
+        public async Task<Message> DeleteMessageAsync(int messageId, string userId)
         {
             var message = await _context.Messages.FindAsync(messageId);
 
@@ -80,7 +80,7 @@ namespace Real_Time_Chat_App.Services
             return message;
         }
 
-        public async Task<IEnumerable<Message>> GetRoomMessagesAsync(Guid roomId, int pageNumber = 1, int pageSize = 50)
+        public async Task<IEnumerable<Message>> GetRoomMessagesAsync(int roomId, int pageNumber = 1, int pageSize = 50)
         {
             return await _context.Messages
                 .Where(m => m.RoomId == roomId && !m.IsDeleted)

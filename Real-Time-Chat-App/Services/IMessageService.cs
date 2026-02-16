@@ -4,9 +4,9 @@ namespace Real_Time_Chat_App.Services
 {
     public interface IMessageService
     {
-        Task<Message> SendMessageAsync(Guid roomId, string senderId, string content);
-        Task<Message> EditMessageAsync(Guid messageId, string userId, string newContent);
-        Task<Message> DeleteMessageAsync(Guid messageId, string userId);
-        Task<IEnumerable<Message>> GetRoomMessagesAsync(Guid roomId, int pageNumber = 1, int pageSize = 50);
+        Task<Message> SendMessageAsync(int roomId, string senderId, string content);
+        Task<Message> EditMessageAsync(int messageId, string userId, string newContent);
+        Task<Message> DeleteMessageAsync(int messageId, string userId);
+        Task<IEnumerable<Message>> GetRoomMessagesAsync(int roomId, int pageNumber = 1, int pageSize = 50);
     }
 }

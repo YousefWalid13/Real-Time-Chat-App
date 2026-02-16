@@ -1,13 +1,15 @@
-using Microsoft.EntityFrameworkCore;
-using Microsoft.AspNetCore.Identity;
+﻿using ChatApp.Domain.Entities;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.AspNetCore.Identity;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
-using System.Text;
+using Microsoft.OpenApi;
+using Microsoft.OpenApi.Models;
 using Real_Time_Chat_App.Data;
 using Real_Time_Chat_App.Hubs;
 using Real_Time_Chat_App.Services;
-using ChatApp.Domain.Entities;
 using Real_Time_Chat_App.Services.Security;
+using System.Text;
 
 namespace Real_Time_Chat_App
 {
@@ -19,7 +21,40 @@ namespace Real_Time_Chat_App
 
             builder.Services.AddControllers();
             builder.Services.AddEndpointsApiExplorer();
-            builder.Services.AddSwaggerGen();
+
+            builder.Services.AddSwaggerGen(options =>
+            {
+                options.SwaggerDoc("v1", new OpenApiInfo
+                {
+                    Title = "Real-Time-Chat-App",
+                    Version = "v1"
+                });
+
+                options.AddSecurityDefinition("Bearer", new OpenApiSecurityScheme
+                {
+                    Name = "Authorization",
+                    Type = SecuritySchemeType.Http,
+                    Scheme = "Bearer",
+                    BearerFormat = "JWT",
+                    In = ParameterLocation.Header,
+                    Description = "Enter JWT Token"
+                });
+
+                options.AddSecurityRequirement(new OpenApiSecurityRequirement
+                {
+                    {
+                        new OpenApiSecurityScheme
+                        {
+                            Reference = new OpenApiReference
+                            {
+                                Type = ReferenceType.SecurityScheme,
+                                Id = "Bearer"
+                            }
+                        },
+                        new string[] {}
+                    }
+                });
+            });
 
             builder.Services.AddDbContext<ChatDbContext>(options =>
                 options.UseNpgsql(builder.Configuration.GetConnectionString("DefaultConnection")));
@@ -36,46 +71,55 @@ namespace Real_Time_Chat_App
             .AddEntityFrameworkStores<ChatDbContext>()
             .AddDefaultTokenProviders();
 
-            builder.Services.Configure<JwtSettings>(builder.Configuration.GetSection("Jwt"));
+            var jwtKey = builder.Configuration["JwtSettings:Key"];
+            var jwtIssuer = builder.Configuration["JwtSettings:Issuer"];
+            var jwtAudience = builder.Configuration["JwtSettings:Audience"];
 
-            var jwtSettings = builder.Configuration.GetSection("Jwt").Get<JwtSettings>();
-            if (jwtSettings != null && !string.IsNullOrEmpty(jwtSettings.Key))
+            builder.Services.Configure<JwtSettings>(options =>
             {
-                builder.Services.AddAuthentication(options =>
-                {
-                    options.DefaultAuthenticateScheme = JwtBearerDefaults.AuthenticationScheme;
-                    options.DefaultChallengeScheme = JwtBearerDefaults.AuthenticationScheme;
-                })
-                .AddJwtBearer(options =>
-                {
-                    options.TokenValidationParameters = new TokenValidationParameters
-                    {
-                        ValidateIssuer = true,
-                        ValidateAudience = true,
-                        ValidateLifetime = true,
-                        ValidateIssuerSigningKey = true,
-                        ValidIssuer = jwtSettings.Issuer,
-                        ValidAudience = jwtSettings.Audience,
-                        IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwtSettings.Key)),
-                        ClockSkew = TimeSpan.Zero
-                    };
+                options.Key = jwtKey!;
+                options.Issuer = jwtIssuer!;
+                options.Audience = jwtAudience!;
+                options.DurationInMinutes = int.Parse(builder.Configuration["JwtSettings:DurationInMinutes"] ?? "60");
+            });
 
-                    options.Events = new JwtBearerEvents
+            builder.Services.AddAuthentication(options =>
+            {
+                options.DefaultAuthenticateScheme = JwtBearerDefaults.AuthenticationScheme;
+                options.DefaultChallengeScheme = JwtBearerDefaults.AuthenticationScheme;
+            })
+            .AddJwtBearer(options =>
+            {
+                options.TokenValidationParameters = new TokenValidationParameters
+                {
+                    ValidateIssuer = true,
+                    ValidateAudience = true,
+                    ValidateLifetime = true,
+                    ValidateIssuerSigningKey = true,
+                    ValidIssuer = jwtIssuer,
+                    ValidAudience = jwtAudience,
+                    IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwtKey!)),
+                    ClockSkew = TimeSpan.Zero
+                };
+
+                options.Events = new JwtBearerEvents
+                {
+                    OnMessageReceived = context =>
                     {
-                        OnMessageReceived = context =>
+                        var accessToken = context.Request.Query["access_token"];
+                        var path = context.HttpContext.Request.Path;
+
+                        if (!string.IsNullOrEmpty(accessToken) && path.StartsWithSegments("/chatHub"))
                         {
-                            var accessToken = context.Request.Query["access_token"];
-                            var path = context.HttpContext.Request.Path;
-
-                            if (!string.IsNullOrEmpty(accessToken) && path.StartsWithSegments("/chatHub"))
-                            {
-                                context.Token = accessToken;
-                            }
-                            return Task.CompletedTask;
+                            context.Token = accessToken;
                         }
-                    };
-                });
-            }
+
+                        return Task.CompletedTask;
+                    }
+                };
+            });
+
+            builder.Services.AddAuthorization();
 
             builder.Services.AddScoped<IMessageService, MessageService>();
             builder.Services.AddScoped<IJwtTokenService, JwtTokenService>();

@@ -5,7 +5,7 @@ namespace Real_Time_Chat_App.DTOs.Message
     public class SendMessageRequest
     {
         [Required]
-        public Guid RoomId { get; set; }
+        public int RoomId { get; set; }
 
         [Required]
         [MinLength(1)]

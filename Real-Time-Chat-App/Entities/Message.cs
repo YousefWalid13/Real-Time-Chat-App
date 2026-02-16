@@ -2,8 +2,8 @@
 
 public class Message
 {
-    public Guid Id { get; private set; }
-    public Guid RoomId { get; private set; }
+    public int Id { get; private set; }
+    public int RoomId { get; private set; }
     public string SenderId { get; private set; } = default!;
     public string Content { get; private set; } = default!;
     public DateTime CreatedAtUtc { get; private set; }
@@ -12,7 +12,7 @@ public class Message
 
     private Message() { } // For EF
 
-    public Message(Guid roomId, string senderId, string content)
+    public Message(int roomId, string senderId, string content)
     {
         if (string.IsNullOrWhiteSpace(content))
             throw new ArgumentException("Message content cannot be empty.");
@@ -20,7 +20,7 @@ public class Message
         if (content.Length > 2000)
             throw new ArgumentException("Message is too long.");
 
-        Id = Guid.NewGuid();
+        
         RoomId = roomId;
         SenderId = senderId;
         Content = content;

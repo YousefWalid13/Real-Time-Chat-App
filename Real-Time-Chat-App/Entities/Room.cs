@@ -2,7 +2,7 @@
 
 public class Room
 {
-    public Guid Id { get; private set; }
+    public int Id { get; private set; }   // 🔹 غيرنا Guid لـ int
     public string Name { get; private set; } = default!;
     public bool IsGroup { get; private set; }
     public DateTime CreatedAtUtc { get; private set; }
@@ -10,14 +10,13 @@ public class Room
     private readonly List<UserRoom> _members = new();
     public IReadOnlyCollection<UserRoom> Members => _members.AsReadOnly();
 
-    private Room() { }
+    private Room() { } // EF Core
 
     public Room(string name, bool isGroup)
     {
         if (string.IsNullOrWhiteSpace(name))
             throw new ArgumentException("Room name cannot be empty.");
 
-        Id = Guid.NewGuid();
         Name = name;
         IsGroup = isGroup;
         CreatedAtUtc = DateTime.UtcNow;

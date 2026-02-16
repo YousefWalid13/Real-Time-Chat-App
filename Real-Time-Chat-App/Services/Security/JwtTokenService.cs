@@ -1,7 +1,6 @@
 ﻿using ChatApp.Domain.Entities;
 using Microsoft.Extensions.Options;
 using Microsoft.IdentityModel.Tokens;
-using Real_Time_Chat_App.Services.Security;
 using System.IdentityModel.Tokens.Jwt;
 using System.Security.Claims;
 using System.Security.Cryptography;
@@ -15,7 +14,16 @@ namespace Real_Time_Chat_App.Services.Security
 
         public JwtTokenService(IOptions<JwtSettings> jwt)
         {
-            _jwt = jwt.Value;
+            _jwt = jwt.Value ?? throw new ArgumentNullException(nameof(jwt), "JwtSettings is null");
+
+            if (string.IsNullOrEmpty(_jwt.Key))
+                throw new ArgumentNullException(nameof(_jwt.Key), "JWT Key is not configured in appsettings or user secrets");
+
+            if (string.IsNullOrEmpty(_jwt.Issuer))
+                throw new ArgumentNullException(nameof(_jwt.Issuer), "JWT Issuer is not configured");
+
+            if (string.IsNullOrEmpty(_jwt.Audience))
+                throw new ArgumentNullException(nameof(_jwt.Audience), "JWT Audience is not configured");
         }
 
         public string GenerateAccessToken(ApplicationUser user, IList<string> roles)

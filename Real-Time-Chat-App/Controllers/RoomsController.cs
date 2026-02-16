@@ -1,11 +1,14 @@
-﻿using Microsoft.AspNetCore.Authorization;
+﻿using ChatApp.Domain.Entities;
+using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Http.HttpResults;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Hosting;
 using Real_Time_Chat_App.Data;
-using ChatApp.Domain.Entities;
-using System.Security.Claims;
-using System.ComponentModel.DataAnnotations;
 using Real_Time_Chat_App.DTOs.Rooms;
+using StackExchange.Redis;
+using System.ComponentModel.DataAnnotations;
+using System.Security.Claims;
 
 namespace Real_Time_Chat_App.Controllers
 {
@@ -21,38 +24,45 @@ namespace Real_Time_Chat_App.Controllers
             _context = context;
         }
 
-        [HttpGet]
-        public async Task<IActionResult> GetUserRooms()
+        [HttpGet("my-rooms")]
+        public async Task<IActionResult> GetMyRooms()
         {
             var userId = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
 
-            var rooms = await _context.UserRooms
+            var myRooms = await _context.UserRooms
                 .Where(ur => ur.UserId == userId)
                 .Include(ur => ur.RoomId)
                 .Select(ur => new
                 {
-                    id = ur.RoomId,
+                    roomId = ur.RoomId,
                     joinedAt = ur.JoinedAtUtc
                 })
                 .ToListAsync();
 
-            var roomDetails = await _context.Rooms
-                .Where(r => rooms.Select(x => x.id).Contains(r.Id))
+            var roomIds = myRooms.Select(r => r.roomId).ToList();
+
+            var rooms = await _context.Rooms
+                .Where(r => roomIds.Contains(r.Id))
                 .Select(r => new
                 {
                     r.Id,
                     r.Name,
                     r.IsGroup,
                     r.CreatedAtUtc,
-                    memberCount = r.Members.Count
+                    memberCount = r.Members.Count,
+                    joinedAt = myRooms.First(mr => mr.roomId == r.Id).joinedAt
                 })
                 .ToListAsync();
 
-            return Ok(roomDetails);
+            return Ok(new
+            {
+                success = true,
+                rooms
+            });
         }
 
         [HttpGet("{roomId}")]
-        public async Task<IActionResult> GetRoom(Guid roomId)
+        public async Task<IActionResult> GetRoom(int roomId)
         {
             var userId = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
 
@@ -79,16 +89,32 @@ namespace Real_Time_Chat_App.Controllers
                 .FirstOrDefaultAsync();
 
             if (room == null)
-                return NotFound();
+                return NotFound(new
+                {
+                    success = false,
+                    message = "Room not found"
+                });
 
-            return Ok(room);
+            return Ok(new
+            {
+                success = true,
+                room
+            });
         }
 
-        [HttpPost]
+        [HttpPost("create")]
         public async Task<IActionResult> CreateRoom([FromBody] CreateRoomRequest request)
         {
             if (!ModelState.IsValid)
-                return BadRequest(ModelState);
+                return BadRequest(new
+                {
+                    success = false,
+                    message = "Validation failed",
+                    errors = ModelState.Values
+                        .SelectMany(v => v.Errors)
+                        .Select(e => e.ErrorMessage)
+                        .ToList()
+                });
 
             var userId = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
 
@@ -100,15 +126,96 @@ namespace Real_Time_Chat_App.Controllers
 
             return CreatedAtAction(nameof(GetRoom), new { roomId = room.Id }, new
             {
-                room.Id,
-                room.Name,
-                room.IsGroup,
-                room.CreatedAtUtc
+                success = true,
+                message = "Room created successfully",
+                room = new
+                {
+                    room.Id,
+                    room.Name,
+                    room.IsGroup,
+                    room.CreatedAtUtc
+                }
+            });
+        }
+
+        [HttpPost("{roomId}/join")]
+        public async Task<IActionResult> JoinRoom(int roomId)
+        {
+            var userId = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+
+            var room = await _context.Rooms
+                .Include(r => r.Members)
+                .FirstOrDefaultAsync(r => r.Id == roomId);
+
+            if (room == null)
+                return NotFound(new
+                {
+                    success = false,
+                    message = "Room not found"
+                });
+
+            var alreadyMember = room.Members.Any(m => m.UserId == userId);
+            if (alreadyMember)
+                return BadRequest(new
+                {
+                    success = false,
+                    message = "You are already a member of this room"
+                });
+
+            room.AddMember(userId!);
+            await _context.SaveChangesAsync();
+
+            return Ok(new
+            {
+                success = true,
+                message = "Successfully joined the room",
+                room = new
+                {
+                    room.Id,
+                    room.Name,
+                    room.IsGroup,
+                    room.CreatedAtUtc,
+                    memberCount = room.Members.Count
+                }
+            });
+        }
+
+        [HttpPost("{roomId}/leave")]
+        public async Task<IActionResult> LeaveRoom(int roomId)
+        {
+            var userId = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+
+            var room = await _context.Rooms
+                .Include(r => r.Members)
+                .FirstOrDefaultAsync(r => r.Id == roomId);
+
+            if (room == null)
+                return NotFound(new
+                {
+                    success = false,
+                    message = "Room not found"
+                });
+
+            var isMember = room.Members.Any(m => m.UserId == userId);
+            if (!isMember)
+                return BadRequest(new
+                {
+                    success = false,
+                    message = "You are not a member of this room"
+                });
+
+            room.RemoveMember(userId!);
+            await _context.SaveChangesAsync();
+
+            return Ok(new
+            {
+                success = true,
+                message = "Successfully left the room"
             });
         }
 
         [HttpPost("{roomId}/members")]
-        public async Task<IActionResult> AddMember(Guid roomId, [FromBody] AddMemberRequest request)
+        public async Task<IActionResult> AddMember(int roomId, [FromBody] AddMemberRequest request)
         {
             if (!ModelState.IsValid)
                 return BadRequest(ModelState);
@@ -139,7 +246,7 @@ namespace Real_Time_Chat_App.Controllers
         }
 
         [HttpDelete("{roomId}/members/{memberId}")]
-        public async Task<IActionResult> RemoveMember(Guid roomId, string memberId)
+        public async Task<IActionResult> RemoveMember(int roomId, string memberId)
         {
             var userId = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
 
@@ -167,7 +274,7 @@ namespace Real_Time_Chat_App.Controllers
         }
 
         [HttpDelete("{roomId}")]
-        public async Task<IActionResult> DeleteRoom(Guid roomId)
+        public async Task<IActionResult> DeleteRoom(int roomId)
         {
             var userId = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
 
@@ -193,8 +300,6 @@ namespace Real_Time_Chat_App.Controllers
             });
         }
     }
-
-   
 
     
 }

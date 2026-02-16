@@ -1,11 +1,12 @@
-﻿using Microsoft.AspNetCore.Authorization;
+﻿using ChatApp.Domain.Entities;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Real_Time_Chat_App.Data;
-using Real_Time_Chat_App.Services;
-using System.Security.Claims;
-using System.ComponentModel.DataAnnotations;
 using Real_Time_Chat_App.DTOs.Message;
+using Real_Time_Chat_App.Services;
+using System.ComponentModel.DataAnnotations;
+using System.Security.Claims;
 
 namespace Real_Time_Chat_App.Controllers
 {
@@ -24,7 +25,7 @@ namespace Real_Time_Chat_App.Controllers
         }
 
         [HttpGet("room/{roomId}")]
-        public async Task<IActionResult> GetRoomMessages(Guid roomId, [FromQuery] int page = 1, [FromQuery] int pageSize = 50)
+        public async Task<IActionResult> GetRoomMessages(int roomId, [FromQuery] int page = 1, [FromQuery] int pageSize = 50)
         {
             var userId = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
 
@@ -80,26 +81,51 @@ namespace Real_Time_Chat_App.Controllers
         public async Task<IActionResult> SendMessage([FromBody] SendMessageRequest request)
         {
             if (!ModelState.IsValid)
-                return BadRequest(ModelState);
+                return BadRequest(new
+                {
+                    success = false,
+                    message = "Validation failed",
+                    errors = ModelState.Values
+                        .SelectMany(v => v.Errors)
+                        .Select(e => e.ErrorMessage)
+                        .ToList()
+                });
 
             var userId = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+
+            var room = await _context.Rooms
+                .Include(r => r.Members)
+                .FirstOrDefaultAsync(r => r.Id == request.RoomId);
+
+            if (room == null)
+                return NotFound(new
+                {
+                    success = false,
+                    message = "Room not found"
+                });
+
+            if (!room.Members.Any(m => m.UserId == userId))
+                return Forbid();
 
             var message = await _messageService.SendMessageAsync(request.RoomId, userId!, request.Content);
 
             return CreatedAtAction(nameof(GetMessage), new { messageId = message.Id }, new
             {
-                message.Id,
-                message.RoomId,
-                message.SenderId,
-                message.Content,
-                message.CreatedAtUtc,
-                message.IsEdited,
-                message.IsDeleted
+                success = true,
+                message = new
+                {
+                    message.Id,
+                    message.RoomId,
+                    message.SenderId,
+                    message.Content,
+                    message.CreatedAtUtc,
+                    message.IsEdited,
+                    message.IsDeleted
+                }
             });
-        }
-
+        }   
         [HttpPut("{messageId}")]
-        public async Task<IActionResult> EditMessage(Guid messageId, [FromBody] EditMessageRequest request)
+        public async Task<IActionResult> EditMessage(int messageId, [FromBody] EditMessageRequest request)
         {
             if (!ModelState.IsValid)
                 return BadRequest(ModelState);
@@ -121,7 +147,7 @@ namespace Real_Time_Chat_App.Controllers
         }
 
         [HttpDelete("{messageId}")]
-        public async Task<IActionResult> DeleteMessage(Guid messageId)
+        public async Task<IActionResult> DeleteMessage(int messageId)
         {
             var userId = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
 

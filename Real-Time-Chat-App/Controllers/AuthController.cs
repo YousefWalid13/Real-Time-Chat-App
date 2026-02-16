@@ -114,7 +114,7 @@ namespace Real_Time_Chat_App.Controllers
                 email = user.Email,
                 fullName = user.FullName,
                 token,
-                refreshToken,
+                
                 success = true,
                 message = "Login successful"
             });
