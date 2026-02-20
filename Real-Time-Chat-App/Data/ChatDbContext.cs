@@ -6,114 +6,117 @@ namespace Real_Time_Chat_App.Data
 {
     public class ChatDbContext : IdentityDbContext<ApplicationUser>
     {
-        public ChatDbContext(DbContextOptions<ChatDbContext> options) : base(options)
+        public ChatDbContext(DbContextOptions<ChatDbContext> options)
+            : base(options)
         {
         }
 
-        public DbSet<Message> Messages { get; set; }
-        public DbSet<Room> Rooms { get; set; }
-        public DbSet<UserRoom> UserRooms { get; set; }
-        public DbSet<UserConnection> UserConnections { get; set; }
+        public DbSet<Message> Messages => Set<Message>();
+        public DbSet<Room> Rooms => Set<Room>();
+        public DbSet<UserRoom> UserRooms => Set<UserRoom>();
+        public DbSet<UserConnection> UserConnections => Set<UserConnection>();
 
         protected override void OnModelCreating(ModelBuilder builder)
         {
             base.OnModelCreating(builder);
 
-            // Configure Message entity
+            // =======================
+            // Message
+            // =======================
             builder.Entity<Message>(entity =>
             {
                 entity.HasKey(m => m.Id);
 
                 entity.Property(m => m.Content)
-                    .IsRequired()
-                    .HasMaxLength(2000);
+                      .IsRequired()
+                      .HasMaxLength(2000);
 
                 entity.Property(m => m.SenderId)
-                    .IsRequired();
+                      .IsRequired();
 
                 entity.Property(m => m.CreatedAtUtc)
-                    .IsRequired();
+                      .IsRequired();
 
                 entity.HasIndex(m => m.RoomId);
                 entity.HasIndex(m => m.CreatedAtUtc);
+
+                entity.HasOne<Room>()
+                      .WithMany(r => r.Messages)
+                      .HasForeignKey(m => m.RoomId)
+                      .OnDelete(DeleteBehavior.Cascade);
             });
 
-            // Configure Room entity
+            // =======================
+            // Room
+            // =======================
             builder.Entity<Room>(entity =>
             {
                 entity.HasKey(r => r.Id);
 
                 entity.Property(r => r.Name)
-                    .IsRequired()
-                    .HasMaxLength(100);
+                      .IsRequired()
+                      .HasMaxLength(100);
 
                 entity.Property(r => r.IsGroup)
-                    .IsRequired();
+                      .IsRequired();
 
                 entity.Property(r => r.CreatedAtUtc)
-                    .IsRequired();
-
-                // Configure the collection relationship
-                entity.HasMany(r => r.Members)
-                    .WithOne()
-                    .HasForeignKey(ur => ur.RoomId)
-                    .OnDelete(DeleteBehavior.Cascade);
+                      .IsRequired();
             });
 
-            // Configure UserRoom entity (Many-to-Many join table)
+            // =======================
+            // UserRoom (Join Table)
+            // =======================
             builder.Entity<UserRoom>(entity =>
             {
                 entity.HasKey(ur => new { ur.RoomId, ur.UserId });
 
-                entity.Property(ur => ur.UserId)
-                    .IsRequired();
-
                 entity.Property(ur => ur.JoinedAtUtc)
-                    .IsRequired();
+                      .IsRequired();
 
-                // Relationships
-                entity.HasOne<Room>()
-                    .WithMany(r => r.Members)
-                    .HasForeignKey(ur => ur.RoomId)
-                    .OnDelete(DeleteBehavior.Cascade);
+                entity.HasOne(ur => ur.Room)
+                      .WithMany(r => r.Members)
+                      .HasForeignKey(ur => ur.RoomId)
+                      .OnDelete(DeleteBehavior.Cascade);
 
-                entity.HasOne<ApplicationUser>()
-                    .WithMany()
-                    .HasForeignKey(ur => ur.UserId)
-                    .OnDelete(DeleteBehavior.Cascade);
-
-                entity.HasIndex(ur => ur.UserId);
+                entity.HasOne(ur => ur.User)
+                      .WithMany()
+                      .HasForeignKey(ur => ur.UserId)
+                      .OnDelete(DeleteBehavior.Cascade);
             });
 
-            // Configure UserConnection entity
+            // =======================
+            // UserConnection
+            // =======================
             builder.Entity<UserConnection>(entity =>
             {
                 entity.HasKey(uc => uc.ConnectionId);
 
                 entity.Property(uc => uc.UserId)
-                    .IsRequired();
+                      .IsRequired();
 
                 entity.Property(uc => uc.ConnectionId)
-                    .IsRequired()
-                    .HasMaxLength(100);
+                      .IsRequired()
+                      .HasMaxLength(100);
 
                 entity.Property(uc => uc.ConnectedAtUtc)
-                    .IsRequired();
+                      .IsRequired();
 
                 entity.HasIndex(uc => uc.UserId);
 
-                // Relationship to ApplicationUser
                 entity.HasOne<ApplicationUser>()
-                    .WithMany()
-                    .HasForeignKey(uc => uc.UserId)
-                    .OnDelete(DeleteBehavior.Cascade);
+                      .WithMany()
+                      .HasForeignKey(uc => uc.UserId)
+                      .OnDelete(DeleteBehavior.Cascade);
             });
 
-            // Configure ApplicationUser
+            // =======================
+            // ApplicationUser
+            // =======================
             builder.Entity<ApplicationUser>(entity =>
             {
                 entity.Property(u => u.CreatedAtUtc)
-                    .IsRequired();
+                      .IsRequired();
             });
         }
     }

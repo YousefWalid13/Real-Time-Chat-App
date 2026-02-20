@@ -2,15 +2,21 @@
 
 public class Room
 {
-    public int Id { get; private set; }   // 🔹 غيرنا Guid لـ int
-    public string Name { get; private set; } = default!;
-    public bool IsGroup { get; private set; }
-    public DateTime CreatedAtUtc { get; private set; }
+    public int Id { get; set; }
 
-    private readonly List<UserRoom> _members = new();
-    public IReadOnlyCollection<UserRoom> Members => _members.AsReadOnly();
+    public string Name { get; set; } = default!;
 
-    private Room() { } // EF Core
+    public bool IsGroup { get; set; }
+
+    public DateTime CreatedAtUtc { get; set; }
+
+    public DateTime? ExpiresAtUtc { get; set; }
+
+    public ICollection<UserRoom> Members { get; private set; } = new List<UserRoom>();
+
+    public ICollection<Message> Messages { get; private set; } = new List<Message>();
+
+    public Room() { } // EF
 
     public Room(string name, bool isGroup)
     {
@@ -24,16 +30,16 @@ public class Room
 
     public void AddMember(string userId)
     {
-        if (_members.Any(m => m.UserId == userId))
+        if (Members.Any(m => m.UserId == userId))
             return;
 
-        _members.Add(new UserRoom(Id, userId));
+        Members.Add(new UserRoom(Id, userId));
     }
 
     public void RemoveMember(string userId)
     {
-        var member = _members.FirstOrDefault(x => x.UserId == userId);
+        var member = Members.FirstOrDefault(x => x.UserId == userId);
         if (member != null)
-            _members.Remove(member);
+            Members.Remove(member);
     }
 }

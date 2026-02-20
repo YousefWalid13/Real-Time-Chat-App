@@ -25,38 +25,60 @@ namespace Real_Time_Chat_App.Controllers
         {
             var userId = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
 
-            var myRooms = await _context.UserRooms
+            if (string.IsNullOrEmpty(userId))
+                return Unauthorized();
+
+            var rooms = await _context.UserRooms
                 .Where(ur => ur.UserId == userId)
-                .Include(ur => ur.RoomId)
                 .Select(ur => new
                 {
-                    roomId = ur.RoomId,
+                    id = ur.Room.Id,
+                    name = ur.Room.Name,
+                    isGroup = ur.Room.IsGroup,
+                    createdAtUtc = ur.Room.CreatedAtUtc,
+                    memberCount = ur.Room.Members.Count,
                     joinedAt = ur.JoinedAtUtc
                 })
                 .ToListAsync();
 
-            var roomIds = myRooms.Select(r => r.roomId).ToList();
-
-            var rooms = await _context.Rooms
-                .Where(r => roomIds.Contains(r.Id))
-                .Select(r => new
-                {
-                    r.Id,
-                    r.Name,
-                    r.IsGroup,
-                    r.CreatedAtUtc,
-                    memberCount = r.Members.Count,
-                    joinedAt = myRooms.First(mr => mr.roomId == r.Id).joinedAt
-                })
-                .ToListAsync();
-
-            return Ok(new
-            {
-                success = true,
-                rooms
-            });
+            return Ok(rooms);
         }
 
+        // Add this DELETE endpoint to your existing RoomsController.cs
+
+        [HttpDelete("{id:int}")]
+        [Authorize]
+        public async Task<IActionResult> DestroyRoom(int id)
+        {
+            var userId = User.FindFirstValue(ClaimTypes.NameIdentifier);
+
+            var room = await _context.Rooms
+                .Include(r => r.Members)
+                .Include(r => r.Messages)
+                .FirstOrDefaultAsync(r => r.Id == id);
+
+            if (room == null)
+                return NotFound(new { message = "Room not found" });
+
+            // Only the creator/owner can destroy the room
+            // Assumes Room entity has a CreatedBy or OwnerId field.
+            // If you don't have this, remove the check and allow any member to destroy.
+            //if (room.CreatedBy != userId)
+            //    return Forbid(); // 403
+
+            // Delete all messages first (if no cascade delete configured)
+            _context.Messages.RemoveRange(room.Messages);
+
+            // Delete all memberships
+            _context.UserRooms.RemoveRange(room.Members);
+
+            // Delete the room itself
+            _context.Rooms.Remove(room);
+
+            await _context.SaveChangesAsync();
+
+            return Ok(new { message = "Room destroyed", roomId = id });
+        }
         [HttpGet("{roomId}")]
         public async Task<IActionResult> GetRoom(int roomId)
         {
@@ -122,6 +144,7 @@ namespace Real_Time_Chat_App.Controllers
 
             return CreatedAtAction(nameof(GetRoom), new { roomId = room.Id }, new
             {
+                ExpireAtUtc = DateTime.UtcNow.AddHours(1),
                 success = true,
                 message = "Room created successfully",
                 room = new

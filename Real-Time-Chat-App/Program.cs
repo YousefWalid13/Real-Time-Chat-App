@@ -1,5 +1,6 @@
 ﻿using ChatApp.Domain.Entities;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
@@ -17,14 +18,13 @@ namespace Real_Time_Chat_App
         public static void Main(string[] args)
         {
             var builder = WebApplication.CreateBuilder(args);
-
             var configuration = builder.Configuration;
             var environment = builder.Environment;
 
-
+            // ================= Controllers =================
             builder.Services.AddControllers();
 
-
+            // ================= Swagger =================
             builder.Services.AddEndpointsApiExplorer();
             builder.Services.AddSwaggerGen(options =>
             {
@@ -40,68 +40,87 @@ namespace Real_Time_Chat_App
                     Type = SecuritySchemeType.Http,
                     Scheme = "bearer",
                     BearerFormat = "JWT",
-                    In = ParameterLocation.Header,
-                    Description = "JWT Authorization header using the Bearer scheme."
+                    In = ParameterLocation.Header
                 });
 
                 options.AddSecurityRequirement(new OpenApiSecurityRequirement
-    {
-        {
-            new OpenApiSecurityScheme
-            {
-                Reference = new OpenApiReference
                 {
-                    Type = ReferenceType.SecurityScheme,
-                    Id = "Bearer"
-                }
-            },
-            Array.Empty<string>()
-        }
-    });
+                    {
+                        new OpenApiSecurityScheme
+                        {
+                            Reference = new OpenApiReference
+                            {
+                                Type = ReferenceType.SecurityScheme,
+                                Id = "Bearer"
+                            }
+                        },
+                        Array.Empty<string>()
+                    }
+                });
             });
 
-
+            // ================= Database =================
             builder.Services.AddDbContext<ChatDbContext>(options =>
-                options.UseNpgsql(configuration.GetConnectionString("DefaultConnection")));
+                options.UseNpgsql(configuration.GetConnectionString("DefaultConnection"))
+            );
 
-
-            builder.Services.AddIdentity<ApplicationUser, IdentityRole>()
+            // ================= Identity =================
+            builder.Services
+                .AddIdentity<ApplicationUser, IdentityRole>(options =>
+                {
+                    options.SignIn.RequireConfirmedAccount = false;
+                })
                 .AddEntityFrameworkStores<ChatDbContext>()
                 .AddDefaultTokenProviders();
 
+            // ================= JWT =================
+            builder.Services.Configure<JwtSettings>(
+                configuration.GetSection("JwtSettings")
+            );
 
-            var jwtKey = configuration["JwtSettings:Key"]!;
-            var jwtIssuer = configuration["JwtSettings:Issuer"]!;
-            var jwtAudience = configuration["JwtSettings:Audience"]!;
+            var jwtSettings = configuration
+                .GetSection("JwtSettings")
+                .Get<JwtSettings>();
 
-            builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
+            var keyBytes = Encoding.UTF8.GetBytes(jwtSettings.Key);
+
+            builder.Services
+                .AddAuthentication(options =>
+                {
+                    options.DefaultAuthenticateScheme = JwtBearerDefaults.AuthenticationScheme;
+                    options.DefaultChallengeScheme = JwtBearerDefaults.AuthenticationScheme;
+                })
                 .AddJwtBearer(options =>
                 {
+                    options.RequireHttpsMetadata = false;
+                    options.SaveToken = true;
+
                     options.TokenValidationParameters = new TokenValidationParameters
                     {
                         ValidateIssuer = true,
                         ValidateAudience = true,
                         ValidateLifetime = true,
                         ValidateIssuerSigningKey = true,
-                        ValidIssuer = jwtIssuer,
-                        ValidAudience = jwtAudience,
-                        IssuerSigningKey = new SymmetricSecurityKey(
-                            Encoding.UTF8.GetBytes(jwtKey)
-                        ),
+
+                        ValidIssuer = jwtSettings.Issuer,
+                        ValidAudience = jwtSettings.Audience,
+
+                        IssuerSigningKey = new SymmetricSecurityKey(keyBytes),
                         ClockSkew = TimeSpan.Zero
                     };
 
+                    // 🔥 Required for SignalR
                     options.Events = new JwtBearerEvents
                     {
                         OnMessageReceived = context =>
                         {
-                            var token = context.Request.Query["access_token"];
+                            var accessToken = context.Request.Query["access_token"];
                             var path = context.HttpContext.Request.Path;
 
-                            if (!string.IsNullOrEmpty(token) &&
+                            if (!string.IsNullOrEmpty(accessToken) &&
                                 path.StartsWithSegments("/chatHub"))
                             {
-                                context.Token = token;
+                                context.Token = accessToken;
                             }
 
                             return Task.CompletedTask;
@@ -111,42 +130,47 @@ namespace Real_Time_Chat_App
 
             builder.Services.AddAuthorization();
 
-
+            // ================= Services =================
             builder.Services.AddScoped<IMessageService, MessageService>();
             builder.Services.AddScoped<IJwtTokenService, JwtTokenService>();
+            builder.Services.AddHostedService<RoomCleanupService>();
 
-
+            // ================= SignalR =================
             builder.Services.AddSignalR();
 
-
+            // ================= CORS =================
             builder.Services.AddCors(options =>
             {
                 options.AddPolicy("AppCors", policy =>
                 {
-                    policy.WithOrigins(configuration["ClientUrl"] ?? "http://localhost:5173")
-                          .AllowAnyHeader()
-                          .AllowAnyMethod()
-                          .AllowCredentials();
+                    policy
+                        .WithOrigins("http://localhost:5173")
+                        .AllowAnyHeader()
+                        .AllowAnyMethod()
+                        .AllowCredentials();
                 });
             });
 
             var app = builder.Build();
 
+            // ================= Middleware Order (VERY IMPORTANT) =================
+
+            app.UseForwardedHeaders();
 
             if (environment.IsDevelopment())
             {
                 app.UseSwagger();
                 app.UseSwaggerUI();
             }
-            else
-            {
-                app.UseHsts();
-            }
 
-            app.UseHttpsRedirection();
-            app.UseCors("AppCors");
-            app.UseAuthentication();
-            app.UseAuthorization();
+            app.UseRouting();                 // ✅ REQUIRED
+
+            app.UseCors("AppCors");           // ✅ BEFORE AUTH
+
+            app.UseAuthentication();          // ✅
+            app.UseAuthorization();           // ✅
+
+            app.MapGet("/", () => Results.Ok("API is running 🚀"));
 
             app.MapControllers();
             app.MapHub<ChatHub>("/chatHub");

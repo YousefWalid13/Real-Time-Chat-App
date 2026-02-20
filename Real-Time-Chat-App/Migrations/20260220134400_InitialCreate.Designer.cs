@@ -12,8 +12,8 @@ using Real_Time_Chat_App.Data;
 namespace Real_Time_Chat_App.Migrations
 {
     [DbContext(typeof(ChatDbContext))]
-    [Migration("20260216204125_fixGUIDtoINT")]
-    partial class fixGUIDtoINT
+    [Migration("20260220134400_InitialCreate")]
+    partial class InitialCreate
     {
         /// <inheritdoc />
         protected override void BuildTargetModel(ModelBuilder modelBuilder)
@@ -145,6 +145,9 @@ namespace Real_Time_Chat_App.Migrations
                     b.Property<DateTime>("CreatedAtUtc")
                         .HasColumnType("timestamp with time zone");
 
+                    b.Property<DateTime?>("ExpiresAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
                     b.Property<bool>("IsGroup")
                         .HasColumnType("boolean");
 
@@ -186,10 +189,15 @@ namespace Real_Time_Chat_App.Migrations
                     b.Property<string>("UserId")
                         .HasColumnType("text");
 
+                    b.Property<string>("ApplicationUserId")
+                        .HasColumnType("text");
+
                     b.Property<DateTime>("JoinedAtUtc")
                         .HasColumnType("timestamp with time zone");
 
                     b.HasKey("RoomId", "UserId");
+
+                    b.HasIndex("ApplicationUserId");
 
                     b.HasIndex("UserId");
 
@@ -328,6 +336,15 @@ namespace Real_Time_Chat_App.Migrations
                     b.ToTable("AspNetUserTokens", (string)null);
                 });
 
+            modelBuilder.Entity("ChatApp.Domain.Entities.Message", b =>
+                {
+                    b.HasOne("ChatApp.Domain.Entities.Room", null)
+                        .WithMany("Messages")
+                        .HasForeignKey("RoomId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
             modelBuilder.Entity("ChatApp.Domain.Entities.UserConnection", b =>
                 {
                     b.HasOne("ChatApp.Domain.Entities.ApplicationUser", null)
@@ -339,17 +356,25 @@ namespace Real_Time_Chat_App.Migrations
 
             modelBuilder.Entity("ChatApp.Domain.Entities.UserRoom", b =>
                 {
-                    b.HasOne("ChatApp.Domain.Entities.Room", null)
+                    b.HasOne("ChatApp.Domain.Entities.ApplicationUser", null)
+                        .WithMany("UserRooms")
+                        .HasForeignKey("ApplicationUserId");
+
+                    b.HasOne("ChatApp.Domain.Entities.Room", "Room")
                         .WithMany("Members")
                         .HasForeignKey("RoomId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
 
-                    b.HasOne("ChatApp.Domain.Entities.ApplicationUser", null)
+                    b.HasOne("ChatApp.Domain.Entities.ApplicationUser", "User")
                         .WithMany()
                         .HasForeignKey("UserId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
+
+                    b.Navigation("Room");
+
+                    b.Navigation("User");
                 });
 
             modelBuilder.Entity("Microsoft.AspNetCore.Identity.IdentityRoleClaim<string>", b =>
@@ -403,9 +428,16 @@ namespace Real_Time_Chat_App.Migrations
                         .IsRequired();
                 });
 
+            modelBuilder.Entity("ChatApp.Domain.Entities.ApplicationUser", b =>
+                {
+                    b.Navigation("UserRooms");
+                });
+
             modelBuilder.Entity("ChatApp.Domain.Entities.Room", b =>
                 {
                     b.Navigation("Members");
+
+                    b.Navigation("Messages");
                 });
 #pragma warning restore 612, 618
         }
