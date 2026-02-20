@@ -141,14 +141,16 @@ namespace Real_Time_Chat_App
             // ================= CORS =================
             builder.Services.AddCors(options =>
             {
-                options.AddPolicy("AppCors", policy =>
-                {
-                    policy
-                        .WithOrigins("http://localhost:5173")
-                        .AllowAnyHeader()
-                        .AllowAnyMethod()
-                        .AllowCredentials();
-                });
+                options.AddPolicy("AllowFrontend",
+                    policy =>
+                    {
+                        policy.WithOrigins(
+                                "https://real-time-chat-app-sigma-ten.vercel.app"
+                            )
+                            .AllowAnyHeader()
+                            .AllowAnyMethod()
+                            .AllowCredentials();
+                    });
             });
 
             var app = builder.Build();
