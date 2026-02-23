@@ -145,7 +145,8 @@ namespace Real_Time_Chat_App
                     policy =>
                     {
                         policy.WithOrigins(
-                                "https://real-time-chat-app-sigma-ten.vercel.app"
+                                "https://real-time-chat-app-sigma-ten.vercel.app",
+                                "http://localhost:5173"
                             )
                             .AllowAnyHeader()
                             .AllowAnyMethod()
@@ -167,7 +168,7 @@ namespace Real_Time_Chat_App
 
             app.UseRouting();                 // ✅ REQUIRED
 
-            app.UseCors("AppCors");           // ✅ BEFORE AUTH
+            app.UseCors("AllowFrontend");             // ✅ BEFORE AUTH
 
             app.UseAuthentication();          // ✅
             app.UseAuthorization();           // ✅
