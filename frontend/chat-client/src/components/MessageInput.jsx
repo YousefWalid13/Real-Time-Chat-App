@@ -1,4 +1,3 @@
-// src/components/MessageInput.js
 import { C } from "../utils/constants";
 
 export default function MessageInput({ activeRoom, input, setInput, onSend }) {
@@ -7,7 +6,8 @@ export default function MessageInput({ activeRoom, input, setInput, onSend }) {
   return (
     <div
       style={{
-        padding: "14px 20px",
+        // Responsive padding
+        padding: "12px max(12px, min(20px, 3vw))",
         background: C.surface,
         borderTop: `1px solid ${C.border}`,
         flexShrink: 0,
@@ -17,11 +17,11 @@ export default function MessageInput({ activeRoom, input, setInput, onSend }) {
         style={{
           display: "flex",
           alignItems: "center",
-          gap: 10,
+          gap: 8,
           background: C.surfaceHi,
           border: `1px solid ${C.borderHi}`,
           borderRadius: 16,
-          padding: "6px 8px 6px 18px",
+          padding: "6px 8px 6px 14px",
         }}
       >
         <input
@@ -30,14 +30,30 @@ export default function MessageInput({ activeRoom, input, setInput, onSend }) {
             background: "transparent",
             border: "none",
             color: C.white,
-            fontSize: 14,
+            // Slightly smaller on narrow screens
+            fontSize: "clamp(13px, 3.5vw, 15px)",
             outline: "none",
             caretColor: C.purple,
+            // Prevent iOS zoom on focus (needs ≥16px, but we use clamp min 13 so add meta viewport instead)
+            minWidth: 0,
           }}
-          placeholder={`Message #${activeRoom.name}...`}
+          placeholder={`Message #${activeRoom.name}…`}
           value={input}
           onChange={(e) => setInput(e.target.value)}
-          onKeyDown={(e) => e.key === "Enter" && !e.shiftKey && onSend()}
+          onKeyDown={(e) => {
+            // On mobile, Enter should not send (use the button) — only send on desktop
+            if (
+              e.key === "Enter" &&
+              !e.shiftKey &&
+              !e.nativeEvent?.isComposing
+            ) {
+              const isMobileDevice = window.innerWidth < 768;
+              if (!isMobileDevice) {
+                e.preventDefault();
+                onSend();
+              }
+            }
+          }}
         />
 
         <button
@@ -64,9 +80,16 @@ export default function MessageInput({ activeRoom, input, setInput, onSend }) {
       </div>
 
       <p
-        style={{ fontSize: 11, color: C.textDim, marginTop: 6, paddingLeft: 4 }}
+        style={{
+          fontSize: 11,
+          color: C.textDim,
+          marginTop: 5,
+          paddingLeft: 4,
+          // Hide the hint on very small screens to save space
+          display: window.innerWidth < 400 ? "none" : "block",
+        }}
       >
-        Press Enter to send
+        {window.innerWidth < 768 ? "Tap ➤ to send" : "Press Enter to send"}
       </p>
     </div>
   );

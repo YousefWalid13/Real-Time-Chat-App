@@ -25,6 +25,26 @@ export default function ChatPage() {
   const [roomError, setRoomError] = useState("");
   const [typingUser, setTypingUser] = useState(null);
 
+  // ── Responsive sidebar ────────────────────────────────────────────
+  const [isMobile, setIsMobile] = useState(() => window.innerWidth < 768);
+  const [sidebarOpen, setSidebarOpen] = useState(
+    () => window.innerWidth >= 768,
+  );
+
+  useEffect(() => {
+    const onResize = () => {
+      const mobile = window.innerWidth < 768;
+      setIsMobile(mobile);
+      if (!mobile) setSidebarOpen(true);
+    };
+    window.addEventListener("resize", onResize);
+    return () => window.removeEventListener("resize", onResize);
+  }, []);
+
+  const closeSidebarOnMobile = () => {
+    if (window.innerWidth < 768) setSidebarOpen(false);
+  };
+
   const prevRoomRef = useRef(null);
   const typingTimerRef = useRef(null);
   const activeRoomRef = useRef(null);
@@ -64,7 +84,17 @@ export default function ChatPage() {
     setOnlineUsers(Array.isArray(users) ? users : []);
   }, []);
 
-  // ── SignalR hook ──────────────────────────────────────────────────
+  const handleRoomDestroyed = useCallback((data) => {
+    const destroyedId = data?.roomId ?? data?.id ?? data;
+    setRooms((prev) => prev.filter((r) => r.id !== destroyedId));
+    if (activeRoomRef.current?.id === destroyedId) {
+      prevRoomRef.current = null;
+      setActiveRoom(null);
+      setMessages([]);
+      setOnlineUsers([]);
+      sessionStorage.removeItem("activeRoom");
+    }
+  }, []);
 
   const { connected, invoke } = useSignalR(
     token,
@@ -73,9 +103,10 @@ export default function ChatPage() {
     handleUserLeft,
     handleUserTyping,
     handleRoomOnlineUsers,
+    handleRoomDestroyed,
   );
 
-  // ── Load my rooms ─────────────────────────────────────────────────
+  // ── Load rooms ────────────────────────────────────────────────────
 
   useEffect(() => {
     if (!token) return;
@@ -97,7 +128,7 @@ export default function ChatPage() {
       .finally(() => setLoadingRooms(false));
   }, [token]);
 
-  // ── Restore last active room from session ─────────────────────────
+  // ── Restore last active room ──────────────────────────────────────
 
   useEffect(() => {
     const saved = sessionStorage.getItem("activeRoom");
@@ -118,9 +149,7 @@ export default function ChatPage() {
       if (prevRoomRef.current && prevRoomRef.current !== activeRoom.id) {
         try {
           await invoke("LeaveRoom", prevRoomRef.current);
-        } catch (e) {
-          console.warn("LeaveRoom failed:", e);
-        }
+        } catch {}
       }
       prevRoomRef.current = activeRoom.id;
       setMessages([]);
@@ -178,6 +207,7 @@ export default function ChatPage() {
       setShowNewRoom(false);
       setActiveRoom(room);
       sessionStorage.setItem("activeRoom", JSON.stringify(room));
+      closeSidebarOnMobile();
     } catch (e) {
       setRoomError(e.message || "Failed to create room");
     } finally {
@@ -199,6 +229,7 @@ export default function ChatPage() {
         );
         setActiveRoom(fetched);
         sessionStorage.setItem("activeRoom", JSON.stringify(fetched));
+        closeSidebarOnMobile();
         return;
       }
       setRooms((prev) =>
@@ -206,6 +237,7 @@ export default function ChatPage() {
       );
       setActiveRoom(room);
       sessionStorage.setItem("activeRoom", JSON.stringify(room));
+      closeSidebarOnMobile();
     } catch (err) {
       const msg = (err?.message || "").toLowerCase();
       if (msg.includes("already a member") || msg.includes("already")) {
@@ -213,6 +245,7 @@ export default function ChatPage() {
         if (existing) {
           setActiveRoom(existing);
           sessionStorage.setItem("activeRoom", JSON.stringify(existing));
+          closeSidebarOnMobile();
           return;
         }
       }
@@ -225,9 +258,7 @@ export default function ChatPage() {
   const leaveRoom = async (room) => {
     try {
       await api.post(`/api/rooms/${room.id}/leave`, {});
-    } catch {
-      /* best-effort */
-    }
+    } catch {}
     await invoke("LeaveRoom", room.id);
     setRooms((prev) => prev.filter((r) => r.id !== room.id));
     if (activeRoom?.id === room.id) {
@@ -249,7 +280,6 @@ export default function ChatPage() {
       alert(err.message || "Failed to destroy room");
       return;
     }
-    // Notify all members via SignalR then clean up locally
     await invoke("DestroyRoom", room.id);
     setRooms((prev) => prev.filter((r) => r.id !== room.id));
     if (activeRoom?.id === room.id) {
@@ -264,42 +294,76 @@ export default function ChatPage() {
   const myId = user?.id || user?.userId || user?.sub || "";
   const myName = user?.username || user?.userName || user?.name || "";
 
+  // ── Render ────────────────────────────────────────────────────────
+
   return (
     <div
       style={{
         display: "flex",
-        height: "100vh",
-        width: "100vw",
+        height: "100dvh",
+        width: "100%",
         background: C.bg,
         overflow: "hidden",
-        position: "fixed",
-        inset: 0,
       }}
     >
-      <Sidebar
-        connected={connected}
-        myName={myName}
-        rooms={rooms}
-        activeRoom={activeRoom}
-        setActiveRoom={(room) => {
-          setActiveRoom(room);
-          if (room) sessionStorage.setItem("activeRoom", JSON.stringify(room));
-          else sessionStorage.removeItem("activeRoom");
+      {/* Mobile backdrop */}
+      {isMobile && sidebarOpen && (
+        <div
+          onClick={() => setSidebarOpen(false)}
+          style={{
+            position: "fixed",
+            inset: 0,
+            background: "rgba(0,0,0,0.6)",
+            zIndex: 40,
+          }}
+        />
+      )}
+
+      {/* Sidebar wrapper — static on desktop, slide-in drawer on mobile */}
+      <div
+        style={{
+          ...(isMobile
+            ? {
+                position: "fixed",
+                top: 0,
+                left: 0,
+                height: "100%",
+                zIndex: 50,
+                transform: sidebarOpen ? "translateX(0)" : "translateX(-100%)",
+                transition: "transform 0.25s cubic-bezier(.4,0,.2,1)",
+              }
+            : { position: "relative", flexShrink: 0 }),
         }}
-        loadingRooms={loadingRooms}
-        showNewRoom={showNewRoom}
-        setShowNewRoom={setShowNewRoom}
-        newRoomName={newRoomName}
-        setNewRoomName={setNewRoomName}
-        createRoom={createRoom}
-        creating={creating}
-        roomError={roomError}
-        setRoomError={setRoomError}
-        joinRoom={joinRoom}
-        leaveRoom={leaveRoom}
-        destroyRoom={destroyRoom}
-        onLogout={logout}
-      />
+      >
+        <Sidebar
+          connected={connected}
+          myName={myName}
+          rooms={rooms}
+          activeRoom={activeRoom}
+          setActiveRoom={(room) => {
+            setActiveRoom(room);
+            if (room)
+              sessionStorage.setItem("activeRoom", JSON.stringify(room));
+            else sessionStorage.removeItem("activeRoom");
+            closeSidebarOnMobile();
+          }}
+          loadingRooms={loadingRooms}
+          showNewRoom={showNewRoom}
+          setShowNewRoom={setShowNewRoom}
+          newRoomName={newRoomName}
+          setNewRoomName={setNewRoomName}
+          createRoom={createRoom}
+          creating={creating}
+          roomError={roomError}
+          setRoomError={setRoomError}
+          joinRoom={joinRoom}
+          leaveRoom={leaveRoom}
+          destroyRoom={destroyRoom}
+          onLogout={logout}
+        />
+      </div>
+
+      {/* Main panel */}
       <div
         style={{
           flex: 1,
@@ -309,7 +373,13 @@ export default function ChatPage() {
           minWidth: 0,
         }}
       >
-        <ChatHeader activeRoom={activeRoom} onlineUsers={onlineUsers} />
+        <ChatHeader
+          activeRoom={activeRoom}
+          onlineUsers={onlineUsers}
+          onToggleSidebar={() => setSidebarOpen((p) => !p)}
+          isMobile={isMobile}
+          sidebarOpen={sidebarOpen}
+        />
         <MessageList
           messages={messages}
           activeRoom={activeRoom}
@@ -328,24 +398,3 @@ export default function ChatPage() {
     </div>
   );
 }
-
-// NOTE: Add this to ChatPage.jsx to handle when ANOTHER user destroys a room you're in:
-//
-// 1. Add handler:
-// const handleRoomDestroyed = useCallback((data) => {
-//   const destroyedId = data?.roomId;
-//   setRooms((prev) => prev.filter((r) => r.id !== destroyedId));
-//   if (activeRoomRef.current?.id === destroyedId) {
-//     prevRoomRef.current = null;
-//     setActiveRoom(null);
-//     setMessages([]);
-//     setOnlineUsers([]);
-//     sessionStorage.removeItem("activeRoom");
-//   }
-// }, []);
-//
-// 2. Pass to useSignalR as 7th argument:
-// const { connected, invoke } = useSignalR(
-//   token, handleMessage, handleUserJoined, handleUserLeft,
-//   handleUserTyping, handleRoomOnlineUsers, handleRoomDestroyed
-// );
